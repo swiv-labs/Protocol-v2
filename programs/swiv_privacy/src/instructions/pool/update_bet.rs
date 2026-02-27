@@ -1,5 +1,5 @@
 use anchor_lang::prelude::*;
-use crate::state::{UserBet, Pool, BetStatus};
+use crate::state::{Bet, Pool, BetStatus};
 use crate::constants::{SEED_POOL};
 use crate::errors::CustomError;
 use crate::events::BetUpdated;

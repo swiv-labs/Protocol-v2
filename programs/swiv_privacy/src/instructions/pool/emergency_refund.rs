@@ -1,6 +1,6 @@
 use anchor_lang::prelude::*;
 use anchor_spl::token::{self, Token, TokenAccount, Transfer};
-use crate::state::{UserBet, Pool, BetStatus};
+use crate::state::{Bet, Pool, BetStatus};
 use crate::constants::{SEED_POOL, SEED_POOL_VAULT};
 use crate::errors::CustomError;
 use crate::events::BetRefunded;
