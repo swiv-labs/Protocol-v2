@@ -86,7 +86,7 @@ describe("Production Flow", () => {
   let vaultPda: PublicKey;
   let poolId: number = 0;
 
-  const POOL_NAME = `TEE-Pool-${Math.floor(Math.random() * 1000)}`;
+  const POOL_TITLE = `TEE-Pool-${Math.floor(Math.random() * 1000)}`;
   let END_TIME: anchor.BN;
   const TARGET_PRICE = new anchor.BN(75);
 
@@ -208,7 +208,7 @@ describe("Production Flow", () => {
     await program.methods
       .createPool(
         new anchor.BN(poolId),
-        POOL_NAME,
+        POOL_TITLE,
         START_TIME,
         END_TIME,
         new anchor.BN(10),
@@ -266,7 +266,7 @@ describe("Production Flow", () => {
             pool: poolPda,
             poolVault: vaultPda,
             userTokenAccount: userAtas[i],
-            userBet: betPda,
+            bet: betPda,
             tokenProgram: TOKEN_PROGRAM_ID,
             systemProgram: SystemProgram.programId,
           })
@@ -362,7 +362,7 @@ describe("Production Flow", () => {
         .accountsPartial({
           user: user.publicKey,
           pool: poolPda,
-          userBet: betPda,
+          bet: betPda,
         })
         .instruction();
 
@@ -672,7 +672,7 @@ describe("Production Flow", () => {
             user: user.publicKey,
             pool: poolPda,
             poolVault: vaultPda,
-            userBet: userBetPda,
+            bet: userBetPda,
             userTokenAccount: userAta,
             tokenProgram: TOKEN_PROGRAM_ID,
           })
@@ -704,7 +704,7 @@ describe("Production Flow", () => {
   });
 
   it("7. Public Verify", async () => {
-    const betData = await program.account.userBet.fetch(betPdas[1]);
+    const betData = await program.account.bet.fetch(betPdas[1]);
     console.log(`    📖 L1 Prediction: ${betData.prediction.toString()}`);
     if (!betData.prediction.eq(predictions[1])) {
       throw new Error(
