@@ -14,7 +14,6 @@ import {
   getOrCreateAssociatedTokenAccount,
   mintTo,
   TOKEN_PROGRAM_ID,
-  createTransferInstruction,
 } from "@solana/spl-token";
 import * as fs from "fs";
 import * as path from "path";
@@ -478,23 +477,6 @@ describe("Production Flow", () => {
       },
     );
 
-    // Transfer additional tokens to vault on L1
-    const transferTokensIx = createTransferInstruction(
-      userAtas[0],
-      vaultPda,
-      user.publicKey,
-      additionalStake.toNumber(),
-    );
-
-    const l1Tx = new anchor.web3.Transaction().add(transferTokensIx);
-    const { blockhash: l1Blockhash } = await provider.connection.getLatestBlockhash();
-    l1Tx.recentBlockhash = l1Blockhash;
-    l1Tx.feePayer = user.publicKey;
-
-    const l1Sig = await anchor.web3.sendAndConfirmTransaction(provider.connection, l1Tx, [user]);
-    console.log(`      ✅ Tokens transferred on L1: ${l1Sig}`);
-
-    // Now update bet with stake increase on TEE
     console.log(`      🎯 Updating bet prediction and increasing stake on TEE...`);
     
     const newPredictionForUpdate = new anchor.BN(77); // Slightly different prediction
