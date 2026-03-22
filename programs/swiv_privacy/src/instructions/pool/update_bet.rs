@@ -72,7 +72,6 @@ pub fn update_bet(
             additional_stake,
         )?;
 
-        // Update stake and pool volume
         bet.stake = bet.stake.checked_add(additional_stake).unwrap();
         pool.total_volume = pool.total_volume.checked_add(additional_stake).unwrap();
 
