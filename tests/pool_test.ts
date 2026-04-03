@@ -88,10 +88,10 @@ describe("Production Flow", () => {
 
   const POOL_TITLE = `TEE-Pool-${Math.floor(Math.random() * 1000)}`;
   let END_TIME: anchor.BN;
-  const TARGET_PRICE = new anchor.BN(75);
+  const TARGET_PRICE = new anchor.BN(75.78);
 
-  const predictions = [new anchor.BN(76), new anchor.BN(80)];
-  const updatedPredictions = [new anchor.BN(78), new anchor.BN(80)];
+  const predictions = [new anchor.BN(76.12), new anchor.BN(75.11)];
+  const updatedPredictions = [new anchor.BN(74.76), new anchor.BN(76.25)];
   const requestIds = ["req_1", "req_2"];
   const betPdas: PublicKey[] = [];
   const permissionPdas: PublicKey[] = [];
@@ -212,7 +212,7 @@ describe("Production Flow", () => {
         POOL_TITLE,
         START_TIME,
         END_TIME,
-        new anchor.BN(10),
+        new anchor.BN(5),
         new anchor.BN(3),
       )
       .accountsPartial({
