@@ -4,11 +4,15 @@ use crate::constants::{SEED_BET, SEED_POOL};
 use crate::errors::CustomError;
 use crate::events::BetUpdated;
 
+/// TEE-only instruction: updates prediction and optionally records a stake increase.
+/// Token transfers for stake increases MUST be handled separately via `add_stake` on L1
+/// before calling this instruction, since the pool vault lives on L1 (not delegated to TEE).
 #[derive(Accounts)]
 pub struct UpdateBet<'info> {
     #[account(mut)]
     pub user: Signer<'info>,
 
+    /// Pool is read-only here — only the bet account (delegated to TEE) is mutated.
     #[account(
         seeds = [SEED_POOL, pool.created_by.as_ref(), &(pool.pool_id.to_le_bytes())],
         bump = pool.bump
@@ -28,20 +32,25 @@ pub struct UpdateBet<'info> {
 
 pub fn update_bet(
     ctx: Context<UpdateBet>,
-    new_prediction: u64, 
+    new_prediction: u64,
+    additional_stake: u64,
 ) -> Result<()> {
     let bet = &mut ctx.accounts.bet;
-    let pool = &ctx.accounts.pool; 
 
     bet.update_count = bet.update_count.checked_add(1).unwrap();
     bet.prediction = new_prediction;
-    
-    msg!("Bet Updated securely via TEE. New prediction stored: {}", new_prediction);
+
+    if additional_stake > 0 {
+        bet.stake = bet.stake.checked_add(additional_stake).unwrap();
+        msg!("Bet Updated: Prediction={}, Stake+={}", new_prediction, additional_stake);
+    } else {
+        msg!("Bet Updated: Prediction={}", new_prediction);
+    }
 
     emit!(BetUpdated {
         bet_address: bet.key(),
         user: ctx.accounts.user.key(),
-        pool_identifier: pool.title.clone(),
+        pool_identifier: ctx.accounts.pool.title.clone(),
     });
 
     Ok(())

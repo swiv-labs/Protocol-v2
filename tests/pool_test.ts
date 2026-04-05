@@ -30,7 +30,7 @@ import {
   delegationRecordPdaFromDelegatedAccount,
   delegationMetadataPdaFromDelegatedAccount,
   delegateBufferPdaFromDelegatedAccountAndOwnerProgram,
-  waitUntilPermissionActive, 
+  waitUntilPermissionActive,
 } from "./utils";
 import * as nacl from "tweetnacl";
 
@@ -88,10 +88,13 @@ describe("Production Flow", () => {
 
   const POOL_TITLE = `TEE-Pool-${Math.floor(Math.random() * 1000)}`;
   let END_TIME: anchor.BN;
-  const TARGET_PRICE = new anchor.BN(75);
+  const PRICE_SCALE = 1_000_000;
+  const toPriceBn = (value: number): anchor.BN =>
+    new anchor.BN(Math.round(value * PRICE_SCALE));
+  const TARGET_PRICE = toPriceBn(75.78);
 
-  const predictions = [new anchor.BN(76), new anchor.BN(80)];
-  const updatedPredictions = [new anchor.BN(78), new anchor.BN(80)];
+  const predictions = [toPriceBn(76.12), toPriceBn(75.11)];
+  const updatedPredictions = [toPriceBn(74.76), toPriceBn(76.25)];
   const requestIds = ["req_1", "req_2"];
   const betPdas: PublicKey[] = [];
   const permissionPdas: PublicKey[] = [];
@@ -212,7 +215,7 @@ describe("Production Flow", () => {
         POOL_TITLE,
         START_TIME,
         END_TIME,
-        new anchor.BN(10),
+        toPriceBn(5),
         new anchor.BN(3),
       )
       .accountsPartial({
@@ -415,7 +418,7 @@ describe("Production Flow", () => {
         );
 
         const updateBetIx = await program.methods
-          .updateBet(updatedPredictions[i])
+          .updateBet(updatedPredictions[i], new anchor.BN(0))
           .accountsPartial({
             user: user.publicKey,
             pool: poolPda,
@@ -441,6 +444,133 @@ describe("Production Flow", () => {
 
       await sleep(1000);
     }
+  });
+
+  it("3.3. Secure Bet Stake Increase", async () => {
+    console.log("    💰 Step 3.3: Testing Bet Stake Increase on TEE...");
+
+    const user = users[0];
+    const betPda = betPdas[0];
+    const additionalStake = new anchor.BN(50 * 1e6); // Add 50 USDC
+
+    // Get pool state before (L1)
+    let poolBefore = await program.account.pool.fetch(poolPda);
+    const volumeBefore = poolBefore.totalVolume;
+
+    // Get bet state before (L1 — bet is still delegated but L1 reflects original stake)
+    let betBefore = await program.account.bet.fetch(betPda);
+    const stakeBefore = betBefore.stake;
+
+    console.log(`      📊 Before Increase:`);
+    console.log(`         Bet Stake: ${stakeBefore.toString()}`);
+    console.log(`         Pool Volume: ${volumeBefore.toString()}`);
+
+    // ── Step 1: Transfer tokens on L1 via add_stake ──────────────────────────
+    console.log(`      💸 Calling addStake on L1 to transfer tokens and update pool volume...`);
+
+    const [poolVaultBump] = PublicKey.findProgramAddressSync(
+      [Buffer.from("pool_vault"), poolPda.toBuffer()],
+      program.programId,
+    );
+
+    await program.methods
+      .addStake(additionalStake)
+      .accountsPartial({
+        user: user.publicKey,
+        pool: poolPda,
+        poolVault: vaultPda,
+        userTokenAccount: userAtas[0],
+        tokenProgram: TOKEN_PROGRAM_ID,
+      })
+      .signers([user])
+      .rpc();
+
+    console.log(`      ✅ addStake executed on L1.`);
+
+    // ── Step 2: Update prediction + record stake increase on TEE ─────────────
+    console.log(`      🎯 Calling updateBet on TEE to record stake increase and update prediction...`);
+
+    const authToken = await getAuthTokenWithRetry(
+      ephemeralRpcEndpoint,
+      user.publicKey,
+      async (msg) => nacl.sign.detached(msg, user.secretKey),
+    );
+
+    const teeConnection = new anchor.web3.Connection(
+      `${TEE_URL}?token=${authToken.token}`,
+      {
+        commitment: "confirmed",
+        wsEndpoint: `${TEE_WS_URL}?token=${authToken.token}`,
+      },
+    );
+
+    // Use updatedPredictions[0] (78) so test 7 sees the correct final prediction
+    const newPredictionForUpdate = updatedPredictions[0];
+
+    const updateBetIx = await program.methods
+      .updateBet(newPredictionForUpdate, additionalStake)
+      .accountsPartial({
+        user: user.publicKey,
+        pool: poolPda,
+        bet: betPda,
+      })
+      .instruction();
+
+    const updateTx = new anchor.web3.Transaction().add(updateBetIx);
+    updateTx.feePayer = user.publicKey;
+    updateTx.recentBlockhash = (await teeConnection.getLatestBlockhash()).blockhash;
+
+    const updateSig = await sendAndConfirmTransaction(
+      teeConnection,
+      updateTx,
+      [user],
+      {
+        skipPreflight: true,
+      },
+    );
+
+    console.log(`      ✅ Bet Updated with Stake Increase on TEE. TEE Sig: ${updateSig}`);
+    await sleep(1000);
+
+    // ── Verify results ────────────────────────────────────────────────────────
+    // Fetch bet state from TEE (canonical while delegated)
+    const teeProvider = new anchor.AnchorProvider(teeConnection, new anchor.Wallet(user), {
+      commitment: "confirmed",
+    });
+    const teeProgram = new anchor.Program<SwivPrivacy>(program.idl, teeProvider);
+    let betAfter = await teeProgram.account.bet.fetch(betPda);
+
+    // Fetch pool state from L1 (not delegated — addStake updated it directly)
+    let poolAfter = await program.account.pool.fetch(poolPda);
+
+    const stakeAfter = betAfter.stake;
+    const volumeAfter = poolAfter.totalVolume;
+
+    console.log(`      📊 After Increase:`);
+    console.log(`         Bet Stake (TEE): ${stakeAfter.toString()}`);
+    console.log(`         Pool Volume (L1): ${volumeAfter.toString()}`);
+    console.log(`         Prediction (TEE): ${betAfter.prediction.toString()}`);
+
+    // Assertions
+    if (!stakeAfter.eq(stakeBefore.add(additionalStake))) {
+      throw new Error(
+        `❌ Stake not increased correctly. Expected ${stakeBefore.add(additionalStake).toString()}, got ${stakeAfter.toString()}`,
+      );
+    }
+
+    if (!volumeAfter.eq(volumeBefore.add(additionalStake))) {
+      throw new Error(
+        `❌ Pool volume not updated correctly. Expected ${volumeBefore.add(additionalStake).toString()}, got ${volumeAfter.toString()}`,
+      );
+    }
+
+    if (!betAfter.prediction.eq(newPredictionForUpdate)) {
+      throw new Error(
+        `❌ Prediction not updated. Expected ${newPredictionForUpdate.toString()}, got ${betAfter.prediction.toString()}`,
+      );
+    }
+
+    console.log(`    ✅ Stake Increase Verified Successfully!`);
   });
 
   it("4. Privacy Verification (TEE Snoop Check)", async () => {
