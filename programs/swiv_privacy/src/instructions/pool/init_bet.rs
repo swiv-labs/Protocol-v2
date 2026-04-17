@@ -69,7 +69,7 @@ pub fn init_bet(
     let clock = Clock::get()?;
 
     require!(clock.unix_timestamp >= pool.start_time, CustomError::DurationTooShort);
-    require!(clock.unix_timestamp < pool.end_time, CustomError::DurationTooShort); 
+    require!(clock.unix_timestamp < pool.cutoff_time, CustomError::MarketClosed); 
 
     token::transfer(
         CpiContext::new(

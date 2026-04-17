@@ -6,9 +6,8 @@ pub const MATH_PRECISION: u128 = 1_000_000;
 pub fn calculate_accuracy_score(
     prediction: u64,
     result: u64,
-    buffer: u64,
 ) -> Result<u64> {
-    if buffer == 0 {
+    if result == 0 {
         return Ok(0);
     }
 
@@ -18,47 +17,70 @@ pub fn calculate_accuracy_score(
         result - prediction
     };
 
-    if diff >= buffer {
-        return Ok(0);
-    }
-    
-    let diff_u128 = diff as u128;
-    let buffer_u128 = buffer as u128;
-
-    let error_fraction = diff_u128
+    let error_scaled = (diff as u128)
         .checked_mul(MATH_PRECISION)
         .ok_or(CustomError::MathOverflow)?
-        .checked_div(buffer_u128)
+        .checked_div(result as u128)
         .ok_or(CustomError::MathOverflow)?;
 
-    let score = MATH_PRECISION.saturating_sub(error_fraction);
+    // AccuracyScore = 1 / (1 + 10 * Error)
+    // Scaled to precision: (PRECISION^2) / (PRECISION + 10 * error_scaled)
+    let denominator = MATH_PRECISION
+        .checked_add(
+            error_scaled
+                .checked_mul(10)
+                .ok_or(CustomError::MathOverflow)?,
+        )
+        .ok_or(CustomError::MathOverflow)?;
+
+    let score = (MATH_PRECISION * MATH_PRECISION)
+        .checked_div(denominator)
+        .ok_or(CustomError::MathOverflow)?;
 
     Ok(score as u64)
 }
 
 pub fn calculate_time_bonus(
     start_time: i64,
-    end_time: i64,
+    cutoff_time: i64,
     entry_time: i64,
 ) -> Result<u64> {
-    if entry_time >= end_time {
+    if entry_time >= cutoff_time {
         return Ok(MATH_PRECISION as u64);
     }
 
-    let total_duration = (end_time - start_time) as u128;
-    let remaining_time = (end_time - entry_time) as u128;
+    let total_duration = (cutoff_time - start_time) as u128;
+    let time_from_start = (cutoff_time - entry_time) as u128;
 
     if total_duration == 0 {
         return Ok(MATH_PRECISION as u64);
     }
 
-    let bonus_portion = remaining_time
+    // T = (cutoff_time - entry_time) / (cutoff_time - start_time)
+    let t_scaled = time_from_start
         .checked_mul(MATH_PRECISION)
-        .unwrap()
+        .ok_or(CustomError::MathOverflow)?
         .checked_div(total_duration)
-        .unwrap();
+        .ok_or(CustomError::MathOverflow)?;
 
-    let factor = MATH_PRECISION.checked_add(bonus_portion).unwrap();
+    // T^2
+    let t_sq_scaled = t_scaled
+        .checked_mul(t_scaled)
+        .ok_or(CustomError::MathOverflow)?
+        .checked_div(MATH_PRECISION)
+        .ok_or(CustomError::MathOverflow)?;
+
+    // TimeWeight = 1 + (1.5 * T^2)
+    // Scaled: MATH_PRECISION + (1.5 * t_sq_scaled) 
+    let bonus = t_sq_scaled
+        .checked_mul(15)
+        .ok_or(CustomError::MathOverflow)?
+        .checked_div(10)
+        .ok_or(CustomError::MathOverflow)?;
+
+    let factor = MATH_PRECISION
+        .checked_add(bonus)
+        .ok_or(CustomError::MathOverflow)?;
 
     Ok(factor as u64)
 }

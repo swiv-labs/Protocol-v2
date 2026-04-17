@@ -34,4 +34,6 @@ pub enum CustomError {
     NotCalculatedYet,
     #[msg("You must wait for the pool to end before undelegating to preserve privacy.")]
     UndelegationTooEarly,
+    #[msg("Market is closed for new predictions (cutoff reached).")]
+    MarketClosed,
 }
