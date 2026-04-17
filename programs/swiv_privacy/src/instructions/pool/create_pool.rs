@@ -26,7 +26,7 @@ pub struct CreatePool<'info> {
     #[account(
         init,
         payer = created_by,
-        space = 8 + 300, 
+        space = 8 + 350, 
         seeds = [SEED_POOL, created_by.key().as_ref(), &pool_id.to_le_bytes()],
         bump
     )]
@@ -69,12 +69,17 @@ pub fn create_pool(
     let pool = &mut ctx.accounts.pool;
     let protocol = &mut ctx.accounts.protocol;
     
+    let total_duration = end_time.saturating_sub(start_time);
+    let cutoff_duration = (total_duration / 20).max(10).min(120);
+    let cutoff_time = end_time.saturating_sub(cutoff_duration);
+
     pool.created_by = ctx.accounts.created_by.key();
     pool.title = title.clone();
     pool.pool_id = pool_id;
     pool.stake_token_mint = ctx.accounts.token_mint.key();
     pool.start_time = start_time;
     pool.end_time = end_time;
+    pool.cutoff_time = cutoff_time;
     pool.total_volume = 0;
     pool.total_participants = 0;
     pool.max_accuracy_buffer = max_accuracy_buffer;

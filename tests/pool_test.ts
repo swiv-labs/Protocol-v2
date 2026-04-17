@@ -35,6 +35,7 @@ import {
   MAGIC_PROGRAM_ID,
 } from "./utils";
 import * as nacl from "tweetnacl";
+import { expect } from "chai";
 
 const KEYS_DIR = path.join(__dirname, "keys");
 if (!fs.existsSync(KEYS_DIR)) fs.mkdirSync(KEYS_DIR);
@@ -101,8 +102,8 @@ describe("Production Flow", () => {
   const betPdas: PublicKey[] = [];
   const permissionPdas: PublicKey[] = [];
 
-  const TEE_URL = "https://tee.magicblock.app";
-  const TEE_WS_URL = "wss://tee.magicblock.app";
+  const TEE_URL = "https://devnet-tee.magicblock.app";
+  const TEE_WS_URL = "wss://devnet-tee.magicblock.app";
   const ephemeralRpcEndpoint = TEE_URL;
 
   // Helper: Retry a function up to 'retries' times with a delay
@@ -143,18 +144,6 @@ describe("Production Flow", () => {
     );
 
     for (const user of users) {
-      const bal = await provider.connection.getBalance(user.publicKey);
-      if (bal < 0.1 * LAMPORTS_PER_SOL) {
-        await provider.sendAndConfirm(
-          new anchor.web3.Transaction().add(
-            SystemProgram.transfer({
-              fromPubkey: admin.publicKey,
-              toPubkey: user.publicKey,
-              lamports: 0.1 * LAMPORTS_PER_SOL,
-            }),
-          ),
-        );
-      }
       const ata = await getOrCreateAssociatedTokenAccount(
         provider.connection,
         admin,
@@ -190,7 +179,7 @@ describe("Production Flow", () => {
   it("2. Create Pool (L1)", async () => {
     const now = Math.floor(Date.now() / 1000);
     const START_TIME = new anchor.BN(now);
-    END_TIME = START_TIME.add(new anchor.BN(40));
+    END_TIME = START_TIME.add(new anchor.BN(120)); // Increased duration to 120s to fix TEE cutoff issue
 
     [poolPda] = PublicKey.findProgramAddressSync(
       [
@@ -234,6 +223,146 @@ describe("Production Flow", () => {
       })
       .rpc();
     console.log("    ✅ Pool Created on L1");
+  });
+
+  it("2.b. Verify Market Cutoff Enforcement (L1)", async () => {
+    const tempPoolId = new anchor.BN(Math.floor(Math.random() * 1000000));
+    const [tempPoolPda] = PublicKey.findProgramAddressSync(
+      [SEED_POOL, admin.publicKey.toBuffer(), tempPoolId.toBuffer("le", 8)],
+      program.programId
+    );
+    const [tempVaultPda] = PublicKey.findProgramAddressSync(
+      [Buffer.from("pool_vault"), tempPoolPda.toBuffer()],
+      program.programId
+    );
+
+    // Short duration (25s) -> 10s cutoff before end
+    const now = Math.floor(Date.now() / 1000);
+    const start = new anchor.BN(now);
+    const end = start.add(new anchor.BN(25));
+    
+    await program.methods
+      .createPool(tempPoolId, "Cutoff Check", start, end, toPriceBn(5), new anchor.BN(0))
+      .accountsPartial({
+        protocol: protocolPda,
+        pool: tempPoolPda,
+        poolVault: tempVaultPda,
+        tokenMint: usdcMint,
+        createdBy: admin.publicKey,
+        createdByTokenAccount: userAtas[0],
+        tokenProgram: TOKEN_PROGRAM_ID,
+        systemProgram: SystemProgram.programId,
+        rent: anchor.web3.SYSVAR_RENT_PUBKEY,
+      })
+      .rpc();
+
+    const tempBetPda = PublicKey.findProgramAddressSync([SEED_BET, tempPoolPda.toBuffer(), users[0].publicKey.toBuffer()], program.programId)[0];
+
+    // Successful registration BEFORE cutoff
+    await program.methods
+      .initBet(new anchor.BN(10 * 1e6), "early_req")
+      .accountsPartial({
+        user: users[0].publicKey,
+        protocol: protocolPda,
+        pool: tempPoolPda,
+        poolVault: tempVaultPda,
+        userTokenAccount: userAtas[0],
+        bet: tempBetPda,
+        tokenProgram: TOKEN_PROGRAM_ID,
+        systemProgram: SystemProgram.programId,
+      })
+      .signers([users[0], admin])
+      .rpc();
+    console.log("      ✅ Successful entry before cutoff recorded");
+
+    const pool = await program.account.pool.fetch(tempPoolPda);
+    console.log(`      ✅ Cutoff Time: ${new Date(pool.cutoffTime.toNumber() * 1000).toISOString()}`);
+    
+    // Wait for cutoff
+    const waitTime = (pool.cutoffTime.toNumber() - Math.floor(Date.now() / 1000) + 2) * 1000;
+    if (waitTime > 0) {
+      console.log(`      ⏳ Waiting ${waitTime/1000}s for cutoff to trigger...`);
+      await sleep(waitTime);
+    }
+
+    // Try to init another bet AFTER cutoff (should fail with MarketClosed)
+    const lateUser = users[1];
+    const lateBetPda = PublicKey.findProgramAddressSync([SEED_BET, tempPoolPda.toBuffer(), lateUser.publicKey.toBuffer()], program.programId)[0];
+    
+    try {
+      await program.methods
+        .initBet(new anchor.BN(10 * 1e6), "late_req")
+        .accountsPartial({
+          user: lateUser.publicKey,
+          protocol: protocolPda,
+          pool: tempPoolPda,
+          poolVault: tempVaultPda,
+          userTokenAccount: userAtas[1],
+          bet: lateBetPda,
+          tokenProgram: TOKEN_PROGRAM_ID,
+          systemProgram: SystemProgram.programId,
+        })
+        .signers([lateUser, admin])
+        .rpc();
+      throw new Error("Should have failed with MarketClosed");
+    } catch (e) {
+      if (!e.message.includes("MarketClosed")) throw e;
+      console.log("      ✅ MarketClosed correctly enforced after cutoff for fresh User 2");
+    }
+
+    // --- REFUND VERIFICATION ---
+    const timeToExpiry = (end.toNumber() - Math.floor(Date.now() / 1000) + 2) * 1000;
+    if (timeToExpiry > 0) {
+      console.log(`      ⏳ Waiting ${timeToExpiry/1000}s for expiry to resolve...`);
+      await sleep(timeToExpiry);
+    }
+
+    await program.methods
+      .resolvePool(new anchor.BN(100_000))
+      .accountsPartial({ admin: admin.publicKey, protocol: protocolPda, pool: tempPoolPda })
+      .rpc();
+    
+    const adminAta = (await getOrCreateAssociatedTokenAccount(provider.connection, admin, usdcMint, admin.publicKey)).address;
+    
+    // Finalize with 0 total_weight (skipping batchCalculateWeights)
+    await program.methods
+      .finalizeWeights()
+      .accountsPartial({
+        admin: admin.publicKey,
+        protocol: protocolPda,
+        pool: tempPoolPda,
+        poolVault: tempVaultPda,
+        treasuryTokenAccount: adminAta,
+        tokenProgram: TOKEN_PROGRAM_ID,
+      })
+      .rpc();
+
+    const poolAfterFinalize = await program.account.pool.fetch(tempPoolPda);
+    console.log(`      📊 Refund Pool Logic -> totalWeight: ${poolAfterFinalize.totalWeight.toString()}, totalVolume: ${poolAfterFinalize.totalVolume.toString()}`);
+    
+    const balanceBefore = (await provider.connection.getTokenAccountBalance(userAtas[0])).value.uiAmount;
+    console.log(`      💰 User 1 Balance Before Refund: ${balanceBefore} USDC`);
+    
+    await program.methods
+      .claimReward()
+      .accountsPartial({
+        user: users[0].publicKey,
+        pool: tempPoolPda,
+        poolVault: tempVaultPda,
+        bet: tempBetPda,
+        userTokenAccount: userAtas[0],
+        tokenProgram: TOKEN_PROGRAM_ID,
+      })
+      .signers([users[0]])
+      .rpc();
+
+    const balanceAfter = (await provider.connection.getTokenAccountBalance(userAtas[0])).value.uiAmount;
+    const diff = balanceAfter - balanceBefore;
+    console.log(`      💰 User 1 Balance After Refund:  ${balanceAfter} USDC`);
+    console.log(`      ✨ REFUND VERIFIED: User 1 received exactly ${diff} USDC back (Full Stake).`);
+    
+    expect(diff).to.be.closeTo(10, 0.001);
+    console.log("      ✅ 100% Refund path successful for total_weight == 0 pool.");
   });
 
   it("3.1. Secure Bet Setup (L1: Init & Delegate)", async () => {
@@ -752,7 +881,7 @@ describe("Production Flow", () => {
       new anchor.Wallet(admin),
       { commitment: "confirmed", preflightCommitment: "confirmed" },
     );
-    const erProgram = new anchor.Program(program.idl, erProvider);
+    const erProgram = new anchor.Program<SwivPrivacy>(program.idl as any, erProvider);
 
     // --- RESOLVE POOL (TEE) ---
     console.log(
@@ -795,6 +924,8 @@ describe("Production Flow", () => {
 
     await sleep(2000);
 
+
+
     // --- UNDELEGATE BETS (Flush to L1) ---
     console.log(
       "    📤 Flushing User Bet Data back to L1 (Batch Undelegate)...",
@@ -806,8 +937,6 @@ describe("Production Flow", () => {
         .accounts({
           payer: admin.publicKey,
           pool: poolPda,
-          magicContext: MAGIC_CONTEXT_ID,
-          magicProgram: MAGIC_PROGRAM_ID,
         })
         .remainingAccounts(batchAccounts)
         .rpc();
@@ -824,18 +953,25 @@ describe("Production Flow", () => {
     await withRetry(async () => {
       const finalUndelegateTx = await erProgram.methods
         .undelegatePool()
-        .accounts({
+        .accountsPartial({
           admin: admin.publicKey,
           protocol: protocolPda,
           pool: poolPda,
-          magicContext: MAGIC_CONTEXT_ID,
-          magicProgram: MAGIC_PROGRAM_ID,
         })
         .rpc();
       console.log(`    ✅ Pool Settled back to L1 (Sig: ${finalUndelegateTx})`);
     }, "Flush Pool (TEE -> L1)");
 
     console.log("    🏁 Settlement Process Complete.");
+
+    // --- MATH VERIFICATION (Post-Settlement on L1) ---
+    const bet1 = await program.account.bet.fetch(betPdas[0]);
+    const bet2 = await program.account.bet.fetch(betPdas[1]);
+    console.log(`      ⚖️  Math Check - User 1 Weight: ${bet1.calculatedWeight.toString()}`);
+    console.log(`      ⚖️  Math Check - User 2 Weight: ${bet2.calculatedWeight.toString()}`);
+    
+    expect(bet1.calculatedWeight.gt(new anchor.BN(100_000_000))).to.be.true;
+    expect(bet2.calculatedWeight.gt(new anchor.BN(100_000_000))).to.be.true;
   });
 
   it("6. Finalize & Claim Rewards", async () => {

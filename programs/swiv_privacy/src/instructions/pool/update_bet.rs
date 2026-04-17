@@ -35,6 +35,9 @@ pub fn update_bet(
     new_prediction: u64,
     additional_stake: u64,
 ) -> Result<()> {
+    let clock = Clock::get()?;
+    require!(clock.unix_timestamp < ctx.accounts.pool.cutoff_time, CustomError::MarketClosed);
+
     let bet = &mut ctx.accounts.bet;
 
     bet.update_count = bet.update_count.checked_add(1).unwrap();

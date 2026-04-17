@@ -33,6 +33,8 @@ pub fn place_bet(
     let bet = &mut ctx.accounts.bet;
     let pool = &ctx.accounts.pool;
 
+    let clock = Clock::get()?;
+    require!(clock.unix_timestamp < pool.cutoff_time, CustomError::MarketClosed);
     require!(bet.status == BetStatus::Active, CustomError::BetAlreadyInitialized);
 
     bet.prediction = prediction;
