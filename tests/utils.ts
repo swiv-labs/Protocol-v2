@@ -5,7 +5,7 @@ export const SEED_POOL = Buffer.from("pool");
 export const SEED_POOL_VAULT = Buffer.from("pool_vault");
 export const SEED_PROTOCOL = Buffer.from("protocol_v1");
 
-export const TEE_VALIDATOR = new PublicKey("FnE6VJT5QNZdedZPnCoLsARgBwoE6DeJNjBs2H1gySXA");
+export const TEE_VALIDATOR = new PublicKey("MTEWGuqxUpYZGFJQcp8tLN7x5v9BSeoFHYWQQ3n3xzo");
 
 export const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -15,6 +15,8 @@ export {
   getAuthToken, 
   PERMISSION_PROGRAM_ID, 
   DELEGATION_PROGRAM_ID, 
+  MAGIC_PROGRAM_ID,
+  MAGIC_CONTEXT_ID,
   waitUntilPermissionActive,
   delegationRecordPdaFromDelegatedAccount, 
   delegationMetadataPdaFromDelegatedAccount, 

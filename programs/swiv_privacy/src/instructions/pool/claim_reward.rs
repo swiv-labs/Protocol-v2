@@ -45,15 +45,20 @@ pub fn claim_reward(ctx: Context<ClaimReward>) -> Result<()> {
 
     require!(pool.weight_finalized, CustomError::SettlementTooEarly);
 
-    if bet.calculated_weight > 0 && pool.total_weight > 0 {
-        let total_distributable_pot = pool.total_volume as u128;
+    if pool.total_weight > 0 {
+        if bet.calculated_weight > 0 {
+            let total_distributable_pot = pool.total_volume as u128;
 
-        payout_amount = bet
-            .calculated_weight
-            .checked_mul(total_distributable_pot)
-            .unwrap()
-            .checked_div(pool.total_weight)
-            .unwrap() as u64;
+            payout_amount = bet
+                .calculated_weight
+                .checked_mul(total_distributable_pot)
+                .unwrap()
+                .checked_div(pool.total_weight)
+                .unwrap() as u64;
+        }
+    } else {
+        // total_weight is 0, user gets full refund
+        payout_amount = bet.stake;
     }
 
     if payout_amount > 0 {

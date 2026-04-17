@@ -21,6 +21,7 @@ pub struct Pool {
     pub total_weight: u128,     
     pub weight_finalized: bool,
     pub total_participants: u64,
+    pub cutoff_time: i64,
     
     pub bump: u8,
 }

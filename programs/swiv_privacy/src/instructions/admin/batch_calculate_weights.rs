@@ -35,8 +35,7 @@ pub fn batch_calculate_weights<'info>(
 
     let result = pool.resolution_result;
     let start_time = pool.start_time;
-    let end_time = pool.end_time;
-    let max_accuracy_buffer = pool.max_accuracy_buffer;
+    let cutoff_time = pool.cutoff_time;
 
     for user_bet_acc_info in accounts_iter {
         let mut user_bet_data = user_bet_acc_info.try_borrow_mut_data()?;
@@ -51,12 +50,11 @@ pub fn batch_calculate_weights<'info>(
         let accuracy_score = calculate_accuracy_score(
             bet.prediction, 
             result, 
-            max_accuracy_buffer
         )?;
         
         let time_bonus = calculate_time_bonus(
             start_time, 
-            end_time, 
+            cutoff_time, 
             bet.creation_ts
         )?;
         
