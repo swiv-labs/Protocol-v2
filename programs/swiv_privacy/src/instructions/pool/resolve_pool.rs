@@ -27,7 +27,6 @@ pub struct ResolvePool<'info> {
 pub fn resolve_pool(ctx: Context<ResolvePool>, final_outcome: u64) -> Result<()> {
     let pool = &mut ctx.accounts.pool;
 
-    // Block re-resolution and cancellation; allow any earlier status.
     require!(
         pool.status != PoolStatus::Resolved
             && pool.status != PoolStatus::Settled
