@@ -114,10 +114,8 @@ pub fn claim_reward(ctx: Context<ClaimReward>) -> Result<()> {
         amount: payout_amount,
     });
 
-    // Decrement total participants and clean up pool accounts if all participants have claimed
     pool.total_participants = pool.total_participants.saturating_sub(1);
     if pool.total_participants == 0 {
-        // 1. Close the pool vault token account
         let created_by_bytes = pool.created_by.as_ref();
         let pool_id_bytes = pool.pool_id.to_le_bytes();
         let bump = pool.bump;
@@ -136,7 +134,6 @@ pub fn claim_reward(ctx: Context<ClaimReward>) -> Result<()> {
             ),
         )?;
 
-        // 2. Close the pool account itself by draining its lamports
         let pool_info = pool.to_account_info();
         let sponsor_info = ctx.accounts.sponsor.to_account_info();
         
