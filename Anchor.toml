@@ -8,6 +8,9 @@ skip-lint = false
 [programs.devnet]
 swiv_privacy = "EG3bvFiDtENf5m5tT3JLq1cATQea97Ckf7KE1WXiRqy6"
 
+[programs.mainnet]
+swiv_privacy = "8uyVHBTUVtkq1ZYFtGdRkxWVi99fS1fE69gadeMtabA"
+
 [provider]
 cluster = "devnet"
 wallet = "./keypair.json"
