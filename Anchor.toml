@@ -6,11 +6,24 @@ resolution = true
 skip-lint = false
 
 [programs.devnet]
-swiv_privacy = "8YgBi7xiu4CvkvAjqXtDhtKZuAVSGvbMLMRo1zyCaVM4"
+swiv_privacy = "EG3bvFiDtENf5m5tT3JLq1cATQea97Ckf7KE1WXiRqy6"
+
+[programs.mainnet]
+swiv_privacy = "8uyVHBTUVtkq1ZYFtGdRkxWVi99fS1fE69gadeMtabA"
 
 [provider]
 cluster = "devnet"
-wallet = "~/.config/solana/id.json"
+wallet = "./keypair.json"
+
+[scripts]
+test = "yarn run ts-mocha -p ./tsconfig.json -t 1000000 \"tests/**/*.ts\""
+
+[hooks]
+
+[test]
+startup_wait = 5000
+shutdown_wait = 2000
+upgradeable = false
 
 [[test.genesis]]
 address = "DELeGGvXpWV2fqJUhqcF5ZSYMS4JTLjteaAMARRSaeSh"
@@ -19,9 +32,3 @@ program = "delegation_program.so"
 [[test.genesis]]
 address = "ACLseoPoyC3cBqoUtkbjZ4aDrkurZW86v19pXz2XQnp1"
 program = "permission_program.so"
-
-[scripts]
-test = "yarn run ts-mocha -p ./tsconfig.json -t 1000000 \"tests/**/*.ts\""
-
-[hooks]
-

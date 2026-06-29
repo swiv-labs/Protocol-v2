@@ -64,8 +64,6 @@ pub fn create_pool(
 ) -> Result<()> {
     let clock = Clock::get()?;
 
-    // Pools must end in the future and run long enough that cutoff_time (which
-    // is end_time minus a 10-120s buffer) doesn't fall before start_time.
     require!(end_time > start_time, CustomError::DurationTooShort);
     require!(end_time > clock.unix_timestamp, CustomError::DurationTooShort);
     require!(end_time.saturating_sub(start_time) >= 10, CustomError::DurationTooShort);

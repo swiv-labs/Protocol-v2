@@ -56,8 +56,6 @@ pub fn emergency_refund(ctx: Context<EmergencyRefund>) -> Result<()> {
     let pool = &mut ctx.accounts.pool;
     let clock = Clock::get()?;
 
-    // Once resolution has started, bets must go through claim_reward so
-    // total_weight / total_participants / weights_calculated_count stay consistent.
     require!(
         pool.status != PoolStatus::Resolving
             && pool.status != PoolStatus::Resolved
@@ -101,9 +99,6 @@ pub fn emergency_refund(ctx: Context<EmergencyRefund>) -> Result<()> {
         pool.total_staked = pool.total_staked.checked_sub(refund_amount).unwrap();
     }
 
-    // This bet will never be scored by batch_calculate_weights once Claimed,
-    // so drop it from total_participants to keep finalize_weights' completeness
-    // check (weights_calculated_count == total_participants) satisfiable.
     if pool.status != PoolStatus::Resolving
         && pool.status != PoolStatus::Resolved
         && pool.status != PoolStatus::Settled
@@ -123,7 +118,6 @@ pub fn emergency_refund(ctx: Context<EmergencyRefund>) -> Result<()> {
     msg!("Emergency Refund executed for user: {}", ctx.accounts.user.key());
 
     if pool.total_participants == 0 {
-        // 1. Close the pool vault token account
         let created_by_bytes = pool.created_by.as_ref();
         let pool_id_bytes = pool.pool_id.to_le_bytes();
         let bump = pool.bump;
@@ -142,7 +136,6 @@ pub fn emergency_refund(ctx: Context<EmergencyRefund>) -> Result<()> {
             ),
         )?;
 
-        // 2. Close the pool account itself by draining its lamports
         let pool_info = pool.to_account_info();
         let sponsor_info = ctx.accounts.sponsor.to_account_info();
         
